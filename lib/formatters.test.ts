@@ -1,0 +1,3 @@
+import { describe, expect, it } from 'vitest';
+import { formatFactor, formatJobStatus } from './formatters';
+describe('SKORE formatters', () => { it('formats positive and negative factors', () => { expect(formatFactor({ name: 'Momentum', impact: 12, weight: 0.3 })).toMatchObject({ label: '+12', direction: 'up' }); expect(formatFactor({ name: 'Value', impact: -4, weight: 0.2 })).toMatchObject({ label: '-4', direction: 'down' }); }); it('maps internal statuses to readable labels', () => { expect(formatJobStatus('started')).toBe('Processing'); expect(formatJobStatus('failed')).toBe('Failed'); }); });
