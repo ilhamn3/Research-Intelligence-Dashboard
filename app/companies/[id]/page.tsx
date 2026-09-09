@@ -3,19 +3,23 @@
 import Link from 'next/link';
 import {
   ArrowLeft,
+  ArrowUpRight,
   BarChart3,
+  BookOpen,
   CheckCircle2,
   Clock,
   FileText,
   Loader2,
   Radio,
   Sparkles,
+  Star,
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { repository } from '@/lib/api';
-import { Company, ResearchBrief, SkoreJob, Trigger } from '@/lib/types';
+import { watchlistStore } from '@/lib/watchlist';
+import { Company, Report, ResearchBrief, SkoreJob, Trigger } from '@/lib/types';
 import { SectionHeader } from '@/components/SectionHeader';
 import { StatusBadge } from '@/components/StatusBadge';
 
@@ -23,20 +27,25 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
   const [company, setCompany] = useState<Company>();
   const [jobs, setJobs] = useState<SkoreJob[]>([]);
   const [triggers, setTriggers] = useState<Trigger[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
   const [brief, setBrief] = useState<ResearchBrief>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isWatched, setIsWatched] = useState(false);
 
   useEffect(() => {
     Promise.all([
       repository.getCompany(params.id),
       repository.getJobs(params.id),
       repository.getTriggers(params.id),
-    ]).then(([c, j, t]) => {
+      repository.getReports(params.id),
+    ]).then(([c, j, t, r]) => {
       setCompany(c);
       setJobs(j);
       setTriggers(t);
+      setReports(r);
     });
+    setIsWatched(watchlistStore.isWatched(params.id));
   }, [params.id]);
 
   if (!company) {
@@ -69,6 +78,11 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  function toggleWatchlist() {
+    const nowWatched = watchlistStore.toggle(params.id);
+    setIsWatched(nowWatched);
   }
 
   return (
@@ -116,17 +130,32 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
           </div>
         </div>
 
-        <button className="button lime" onClick={generateBrief} disabled={loading}>
-          {loading ? (
-            <>
-              <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Generating synthesis...
-            </>
-          ) : (
-            <>
-              <Sparkles size={16} /> Generate Research Brief
-            </>
-          )}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            className="button secondary"
+            onClick={toggleWatchlist}
+            style={{ fontSize: '13px' }}
+            title={isWatched ? 'Remove from watchlist' : 'Add to watchlist'}
+          >
+            <Star
+              size={14}
+              fill={isWatched ? '#10b981' : 'none'}
+              color={isWatched ? '#10b981' : '#94a3b8'}
+            />{' '}
+            {isWatched ? 'Watching' : 'Watch'}
+          </button>
+          <button className="button lime" onClick={generateBrief} disabled={loading}>
+            {loading ? (
+              <>
+                <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Generating synthesis...
+              </>
+            ) : (
+              <>
+                <Sparkles size={16} /> Generate Research Brief
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -230,6 +259,67 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
               </table>
             </div>
           </div>
+
+          {/* Research Reports for this Company */}
+          {reports.length > 0 && (
+            <div>
+              <SectionHeader
+                eyebrow="Research Outputs"
+                title="Generated Research Reports"
+                detail="Certified dossiers and SKORE synthesis outputs"
+              />
+              <div className="panel" style={{ padding: '8px 18px' }}>
+                {reports.map((report) => (
+                  <div
+                    key={report.id}
+                    className="activity-item"
+                    style={{ padding: '14px 0' }}
+                  >
+                    <div
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 8,
+                        background: 'rgba(16, 185, 129, 0.1)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        display: 'grid',
+                        placeItems: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <BookOpen size={14} color="#10b981" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#e2e8f0' }}>
+                        {report.title || `${company.ticker} Research Dossier`}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: 2, display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <span className="mono">Score: {report.score}/100</span>
+                        <span>{new Date(report.generatedAt).toLocaleDateString()}</span>
+                        {report.generationStatus && (
+                          <span
+                            className={`status-badge ${
+                              report.generationStatus === 'certified' ? 'status-complete' : 'status-processing'
+                            }`}
+                            style={{ fontSize: '9px', padding: '1px 6px' }}
+                          >
+                            {report.generationStatus.toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <Link
+                      href={`/reports/${report.id}`}
+                      className="button secondary"
+                      style={{ padding: '5px 10px', fontSize: '11px' }}
+                    >
+                      Read <ArrowUpRight size={12} />
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Right Column: Research Brief & Observed Signals */}
@@ -312,7 +402,7 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
                 <Sparkles size={28} style={{ margin: '0 auto 12px', color: '#38bdf8' }} />
                 <h4 style={{ margin: 0, color: '#fff', fontSize: '15px' }}>No Brief Generated Yet</h4>
                 <p style={{ margin: '8px 0 16px', color: '#94a3b8', fontSize: '13px', lineHeight: 1.5 }}>
-                  Click "Generate Research Brief" to synthesize live regulatory filings, revisions, and SKORE factor impacts.
+                  Click &quot;Generate Research Brief&quot; to synthesize live regulatory filings, revisions, and SKORE factor impacts.
                 </p>
                 <button className="button primary" onClick={generateBrief} disabled={loading}>
                   <Sparkles size={14} /> Generate Now
@@ -354,4 +444,3 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
     </div>
   );
 }
-

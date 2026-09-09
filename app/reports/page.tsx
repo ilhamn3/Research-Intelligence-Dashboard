@@ -3,13 +3,17 @@
 import Link from 'next/link';
 import {
   ArrowUpRight,
+  BookOpen,
+  CheckCircle2,
   Download,
+  Eye,
   FileCheck,
   FileDown,
   FileText,
   Search,
   Sparkles,
   TrendingUp,
+  X,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { repository } from '@/lib/api';
@@ -21,6 +25,7 @@ export default function ReportsPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [query, setQuery] = useState('');
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [previewReport, setPreviewReport] = useState<Report | null>(null);
 
   useEffect(() => {
     Promise.all([repository.getReports(), repository.listCompanies()]).then(([r, c]) => {
@@ -33,7 +38,7 @@ export default function ReportsPage() {
 
   const filtered = reports.filter((report) => {
     const comp = companyMap.get(report.companyId);
-    const text = `${report.id} ${report.companyId} ${comp?.name ?? ''} ${comp?.ticker ?? ''}`.toLowerCase();
+    const text = `${report.id} ${report.companyId} ${comp?.name ?? ''} ${comp?.ticker ?? ''} ${report.title ?? ''}`.toLowerCase();
     return text.includes(query.toLowerCase());
   });
 
@@ -41,20 +46,20 @@ export default function ReportsPage() {
     setDownloading(id);
     window.setTimeout(() => {
       setDownloading(null);
-      // Create a virtual download blob for demo export
-      const element = document.createElement('a');
+      const rep = reports.find((r) => r.id === id);
       const file = new Blob(
         [
-          `WTFXAI RESEARCH INTELLIGENCE DOSSIER\nTarget: ${ticker}\nReport ID: ${id}\nDate: ${new Date().toISOString()}\nStatus: CERTIFIED OPERATIONAL CONSENSUS`,
+          `WTFXAI RESEARCH INTELLIGENCE DOSSIER\nTarget: ${ticker}\nReport ID: ${id.toUpperCase()}\nDate: ${new Date().toISOString()}\nStatus: ${(rep?.generationStatus || 'CERTIFIED').toUpperCase()}\nScore: ${rep?.score ?? 80}/100\n\nExecutive Summary:\n${rep?.executiveSummary || 'Multimodal research synthesis generated from primary filings and order books.'}\n`,
         ],
         { type: 'text/plain' }
       );
+      const element = document.createElement('a');
       element.href = URL.createObjectURL(file);
-      element.download = `WTFXAI_${ticker}_Intelligence_Dossier.txt`;
+      element.download = `WTFXAI_${ticker}_Dossier_${id.toUpperCase()}.txt`;
       document.body.appendChild(element);
       element.click();
       document.body.removeChild(element);
-    }, 600);
+    }, 500);
   };
 
   return (
@@ -112,12 +117,12 @@ export default function ReportsPage() {
 
         <div className="metric-card">
           <div className="metric-top">
-            <span className="metric-label">Export Format</span>
+            <span className="metric-label">Report Viewer Format</span>
             <div className="metric-icon-wrap">
               <FileDown size={16} />
             </div>
           </div>
-          <strong style={{ fontSize: '20px', letterSpacing: '0.04em' }}>PDF / TXT</strong>
+          <strong style={{ fontSize: '20px', letterSpacing: '0.04em' }}>Interactive / PDF</strong>
           <span style={{ fontSize: '11px', color: '#64748b' }}>Compliance audit ready</span>
         </div>
       </div>
@@ -138,7 +143,7 @@ export default function ReportsPage() {
 
       <SectionHeader
         title="Dossier Repository"
-        detail="Traceable synthesis reports generated from multi-agent event workflows"
+        detail="Readable research and SKORE output with metadata, generation status, and factor attribution"
       />
 
       <div className="panel table-scroll">
@@ -147,25 +152,48 @@ export default function ReportsPage() {
             <tr>
               <th>Dossier ID</th>
               <th>Tracked Entity</th>
+              <th>Generation Status</th>
               <th>Composite SKORE</th>
               <th>Generation Timestamp</th>
-              <th style={{ textAlign: 'right' }}>Actions</th>
+              <th style={{ textAlign: 'right' }}>Report Viewer Actions</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((report) => {
               const comp = companyMap.get(report.companyId);
               const ticker = comp?.ticker ?? report.companyId.toUpperCase();
+              const status = report.generationStatus || 'certified';
               return (
                 <tr key={report.id}>
                   <td className="mono" style={{ color: '#38bdf8', fontWeight: 600 }}>
-                    {report.id.toUpperCase()}
+                    <Link
+                      href={`/reports/${report.id}`}
+                      style={{ color: '#38bdf8', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      {report.id.toUpperCase()} <ArrowUpRight size={12} />
+                    </Link>
                   </td>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span className="ticker">{ticker}</span>
+                      <Link href={`/companies/${report.companyId}`} style={{ textDecoration: 'none' }}>
+                        <span className="ticker">{ticker}</span>
+                      </Link>
                       <span className="company-name">{comp?.name ?? 'Covered Asset'}</span>
                     </div>
+                  </td>
+                  <td>
+                    <span
+                      className={`status-badge ${
+                        status === 'certified'
+                          ? 'status-complete'
+                          : status === 'in-review'
+                          ? 'status-processing'
+                          : 'status-queued'
+                      }`}
+                      style={{ fontSize: '10px', padding: '2px 8px' }}
+                    >
+                      {status.toUpperCase()}
+                    </span>
                   </td>
                   <td>
                     <span
@@ -193,21 +221,29 @@ export default function ReportsPage() {
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                      <Link
-                        href={`/companies/${report.companyId}`}
+                      <button
                         className="button secondary"
                         style={{ padding: '6px 12px', fontSize: '12px' }}
+                        onClick={() => setPreviewReport(report)}
+                        title="Quick View summary"
                       >
-                        Dossier <ArrowUpRight size={13} />
+                        <Eye size={13} /> Quick View
+                      </button>
+                      <Link
+                        href={`/reports/${report.id}`}
+                        className="button lime"
+                        style={{ padding: '6px 12px', fontSize: '12px' }}
+                      >
+                        <BookOpen size={13} /> Read Full Report
                       </Link>
                       <button
-                        className="button primary"
-                        style={{ padding: '6px 12px', fontSize: '12px' }}
+                        className="button secondary"
+                        style={{ padding: '6px 10px', fontSize: '12px' }}
                         disabled={downloading === report.id}
                         onClick={() => handleDownload(report.id, ticker)}
+                        title="Export TXT Dossier"
                       >
                         <Download size={13} />
-                        {downloading === report.id ? 'Exporting...' : 'Export'}
                       </button>
                     </div>
                   </td>
@@ -224,6 +260,102 @@ export default function ReportsPage() {
           </div>
         )}
       </div>
+
+      {/* Quick View Drawer / Modal */}
+      {previewReport && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 9999,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 20,
+          }}
+          onClick={() => setPreviewReport(null)}
+        >
+          <div
+            className="panel"
+            style={{
+              width: '100%',
+              maxWidth: 680,
+              maxHeight: '85vh',
+              overflowY: 'auto',
+              background: '#0d131f',
+              border: '1px solid rgba(56, 189, 248, 0.3)',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.8)',
+              padding: '24px 28px',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+              <div>
+                <div className="eyebrow">
+                  Dossier Preview · {previewReport.id.toUpperCase()}
+                </div>
+                <h2 style={{ margin: '4px 0 0', fontSize: '20px', fontWeight: 700, color: '#fff' }}>
+                  {previewReport.title || `${companyMap.get(previewReport.companyId)?.ticker} Research Synthesis`}
+                </h2>
+              </div>
+              <button
+                onClick={() => setPreviewReport(null)}
+                style={{ background: 'transparent', border: 0, color: '#94a3b8', cursor: 'pointer', padding: 4 }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 18, flexWrap: 'wrap' }}>
+              <span className={`status-badge status-complete`}>
+                {(previewReport.generationStatus || 'CERTIFIED').toUpperCase()} CONSENSUS
+              </span>
+              <span className="mono" style={{ color: '#38bdf8', fontWeight: 700, fontSize: '14px' }}>
+                Score: {previewReport.score}/100
+              </span>
+              <span className="mono" style={{ color: '#64748b', fontSize: '12px' }}>
+                {new Date(previewReport.generatedAt).toLocaleString()}
+              </span>
+            </div>
+
+            <div style={{ marginBottom: 18 }}>
+              <h3 style={{ fontSize: '13px', fontWeight: 600, color: '#38bdf8', textTransform: 'uppercase', marginBottom: 6 }}>
+                Executive Summary
+              </h3>
+              <p style={{ margin: 0, color: '#e2e8f0', fontSize: '13px', lineHeight: 1.6 }}>
+                {previewReport.executiveSummary || 'Automated multi-agent synthesis across regulatory disclosures and factor sensitivities.'}
+              </p>
+            </div>
+
+            <div style={{ marginBottom: 18 }}>
+              <h3 style={{ fontSize: '13px', fontWeight: 600, color: '#38bdf8', textTransform: 'uppercase', marginBottom: 8 }}>
+                Factor Decomposition
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {previewReport.factors.map((factor) => (
+                  <div key={factor.name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                    <span style={{ color: '#cbd5e1' }}>{factor.name}</span>
+                    <span className="mono" style={{ color: factor.impact >= 0 ? '#34d399' : '#fb7185', fontWeight: 600 }}>
+                      {factor.impact >= 0 ? '+' : ''}{factor.impact}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
+              <button className="button secondary" onClick={() => setPreviewReport(null)}>
+                Close Preview
+              </button>
+              <Link href={`/reports/${previewReport.id}`} className="button lime">
+                Open Full Dossier <ArrowUpRight size={14} />
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

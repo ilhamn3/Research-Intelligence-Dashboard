@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
+import { useAuth } from '@/lib/useAuth';
+import { watchlistStore } from '@/lib/watchlist';
 import {
   ArrowUpRight,
   BarChart3,
@@ -94,6 +96,24 @@ export function CommandCenterDashboard({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [customWeights, setCustomWeights] = useState<Record<string, SkoreFactor[]>>({});
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
+
+  const { user } = useAuth();
+  const [watchedIds, setWatchedIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    setWatchedIds(watchlistStore.getWatched(user?.id));
+    const handleWatchlistChange = () => {
+      setWatchedIds(watchlistStore.getWatched(user?.id));
+    };
+    window.addEventListener('wtfxai_watchlist_change', handleWatchlistChange);
+    return () => {
+      window.removeEventListener('wtfxai_watchlist_change', handleWatchlistChange);
+    };
+  }, [user?.id]);
+
+  const userWatchedCompanies = useMemo(() => {
+    return companies.filter((c) => watchedIds.includes(c.id));
+  }, [companies, watchedIds]);
 
   const companyMap = useMemo(
     () => new Map(companies.map((c) => [c.id, c])),
@@ -219,6 +239,103 @@ export function CommandCenterDashboard({
           <span>{feedbackToast}</span>
         </div>
       )}
+
+      {/* User-Isolated Session Desk Banner */}
+      <section
+        className="panel"
+        style={{
+          marginBottom: 16,
+          padding: '16px 20px',
+          background: 'linear-gradient(90deg, rgba(13, 22, 38, 0.95) 0%, rgba(10, 15, 26, 0.8) 100%)',
+          borderColor: 'rgba(56, 189, 248, 0.25)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 14,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(2, 132, 199, 0.2))',
+              border: '1px solid rgba(56, 189, 248, 0.35)',
+              display: 'grid',
+              placeItems: 'center',
+              fontWeight: 700,
+              fontSize: 16,
+              color: '#38bdf8',
+            }}
+          >
+            {user?.initials || 'US'}
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '15px', fontWeight: 700, color: '#fff' }}>
+                {user ? `${user.name}'s Desk` : 'Institutional Workspace'}
+              </span>
+              <span
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  letterSpacing: '0.04em',
+                  background: user?.role === 'admin' ? 'rgba(251, 191, 36, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                  border: `1px solid ${user?.role === 'admin' ? 'rgba(251, 191, 36, 0.3)' : 'rgba(56, 189, 248, 0.3)'}`,
+                  color: user?.role === 'admin' ? '#fbbf24' : '#38bdf8',
+                  textTransform: 'uppercase',
+                }}
+              >
+                {user?.role === 'admin' ? 'ADMIN' : 'USER CLEARANCE'}
+              </span>
+            </div>
+            <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: 2 }}>
+              {user?.department || 'Quantitative Strategies Desk'} · <span className="mono" style={{ color: '#64748b' }}>{user?.email || 'Active Session'}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* User's Pinned Entities Chips */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            My Pinned Universe ({userWatchedCompanies.length}):
+          </span>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {userWatchedCompanies.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setSelectedCompanyId(c.id)}
+                style={{
+                  padding: '3px 8px',
+                  borderRadius: 4,
+                  border: `1px solid ${selectedCompanyId === c.id ? '#38bdf8' : 'var(--line)'}`,
+                  background: selectedCompanyId === c.id ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.02)',
+                  color: selectedCompanyId === c.id ? '#38bdf8' : '#cbd5e1',
+                  fontFamily: 'DM Mono, monospace',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                ★ {c.ticker}
+              </button>
+            ))}
+            {userWatchedCompanies.length === 0 && (
+              <span style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+                No pinned entities. Browse Universe to pin companies.
+              </span>
+            )}
+          </div>
+          <Link href="/watchlist" className="button secondary" style={{ fontSize: '11px', padding: '4px 8px' }}>
+            Manage Watchlist →
+          </Link>
+        </div>
+      </section>
 
       {/* Company Spotlight */}
       {selectedCompany && (

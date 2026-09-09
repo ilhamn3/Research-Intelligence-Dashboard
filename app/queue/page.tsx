@@ -1,30 +1,35 @@
 'use client';
 
+import Link from 'next/link';
 import {
   AlertTriangle,
+  ArrowUpRight,
   CheckCircle2,
   Clock,
   ListTodo,
   Loader2,
-  PlayCircle,
   RefreshCw,
   RotateCcw,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { repository } from '@/lib/api';
-import { SkoreJob } from '@/lib/types';
+import { Company, SkoreJob } from '@/lib/types';
 import { StatusBadge } from '@/components/StatusBadge';
 import { SectionHeader } from '@/components/SectionHeader';
 
 export default function QueuePage() {
   const [jobs, setJobs] = useState<SkoreJob[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState<'success' | 'error'>('success');
   const [loading, setLoading] = useState(true);
+  const [busyJobId, setBusyJobId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
-    const data = await repository.getJobs();
+    const [data, comps] = await Promise.all([repository.getJobs(), repository.listCompanies()]);
     setJobs(data);
+    setCompanies(comps);
     setLoading(false);
   }
 
@@ -32,10 +37,42 @@ export default function QueuePage() {
     load();
   }, []);
 
+  const companyMap = new Map(companies.map((c) => [c.id, c]));
   const total = jobs.length;
   const processing = jobs.filter((j) => j.status === 'started' || j.status === 'queued').length;
   const completed = jobs.filter((j) => j.status === 'completed').length;
   const failed = jobs.filter((j) => j.status === 'failed').length;
+
+  async function handleRetryOrRerun(job: SkoreJob) {
+    setBusyJobId(job.id);
+    setMessage('');
+    const comp = companyMap.get(job.companyId);
+    const ticker = comp?.ticker ?? job.companyId.toUpperCase();
+
+    try {
+      if (job.status === 'failed') {
+        const retried = await repository.retryJob(job.id);
+        setMessageType('success');
+        setMessage(
+          `Retry dispatched for ${job.id} (${ticker}). New status: ${retried.status}. Score: ${retried.score ?? '—'}/100.`
+        );
+      } else {
+        const newJob = await repository.rerunJob(job.companyId);
+        setMessageType('success');
+        setMessage(
+          `SKORE rerun queued for ${ticker}. New job ${newJob.id} dispatched. Status: ${newJob.status}.`
+        );
+      }
+      // Reload jobs after action
+      const updated = await repository.getJobs();
+      setJobs(updated);
+    } catch (err) {
+      setMessageType('error');
+      setMessage(`Action failed for ${job.id}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+
+    setBusyJobId(null);
+  }
 
   return (
     <div className="content">
@@ -49,6 +86,7 @@ export default function QueuePage() {
           onClick={() => {
             load();
             setMessage('Execution ledger synchronized with background workers.');
+            setMessageType('success');
           }}
           disabled={loading}
           style={{ fontSize: '13px' }}
@@ -107,11 +145,23 @@ export default function QueuePage() {
 
       <SectionHeader
         title="Execution Ledger"
-        detail="Traceable status of parallel worker runs, inputs, and scoring outcomes"
+        detail="Pending / Processing / Complete / Failed states with timestamps and workflow actions"
       />
 
       {message && (
-        <div className="alert" style={{ marginBottom: 16 }}>
+        <div
+          className="alert"
+          style={{
+            marginBottom: 16,
+            borderColor: messageType === 'error' ? 'rgba(244,63,94,0.3)' : undefined,
+            color: messageType === 'error' ? '#fb7185' : undefined,
+          }}
+        >
+          {messageType === 'error' ? (
+            <AlertTriangle size={16} style={{ display: 'inline', marginRight: 6 }} />
+          ) : (
+            <CheckCircle2 size={16} style={{ display: 'inline', marginRight: 6 }} />
+          )}
           {message}
         </div>
       )}
@@ -124,6 +174,7 @@ export default function QueuePage() {
               <th>Company</th>
               <th>Status</th>
               <th>Queued Timestamp</th>
+              <th>Completed Timestamp</th>
               <th>Composite SKORE</th>
               <th style={{ textAlign: 'right' }}>Workflow Action</th>
             </tr>
@@ -131,51 +182,69 @@ export default function QueuePage() {
           <tbody>
             {jobs.length === 0 && !loading ? (
               <tr>
-                <td colSpan={6}>
+                <td colSpan={7}>
                   <div className="empty">No active jobs in the queue ledger.</div>
                 </td>
               </tr>
             ) : (
-              jobs.map((job) => (
-                <tr key={job.id}>
-                  <td className="mono" style={{ color: '#38bdf8', fontWeight: 600 }}>
-                    {job.id}
-                  </td>
-                  <td>
-                    <span className="ticker">{job.companyId.toUpperCase()}</span>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      <StatusBadge status={job.status} />
-                      {job.error && (
-                        <span style={{ color: '#fb7185', fontSize: '11px', fontFamily: 'DM Mono, monospace' }}>
-                          {job.error}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="mono" style={{ color: '#94a3b8' }}>
-                    {new Date(job.queuedAt).toLocaleString()}
-                  </td>
-                  <td className="mono" style={{ fontWeight: 700, color: '#fff' }}>
-                    {job.score ?? '—'}
-                  </td>
-                  <td style={{ textAlign: 'right' }}>
-                    <button
-                      className="button secondary"
-                      style={{ padding: '6px 12px', fontSize: '12px' }}
-                      onClick={() =>
-                        setMessage(
-                          `Manual trigger queued for ${job.id} (${job.companyId.toUpperCase()}). Worker dispatched.`
-                        )
-                      }
-                    >
-                      <RotateCcw size={12} />
-                      {job.status === 'failed' ? 'Retry Job' : 'Rerun SKORE'}
-                    </button>
-                  </td>
-                </tr>
-              ))
+              jobs.map((job) => {
+                const comp = companyMap.get(job.companyId);
+                const ticker = comp?.ticker ?? job.companyId.toUpperCase();
+                return (
+                  <tr key={job.id}>
+                    <td className="mono" style={{ color: '#38bdf8', fontWeight: 600 }}>
+                      {job.id}
+                    </td>
+                    <td>
+                      <Link
+                        href={`/companies/${job.companyId}`}
+                        style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                      >
+                        <span className="ticker">{ticker}</span>
+                        {comp && <span className="company-name">{comp.name}</span>}
+                      </Link>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <StatusBadge status={job.status} />
+                        {job.error && (
+                          <span style={{ color: '#fb7185', fontSize: '11px', fontFamily: 'DM Mono, monospace' }}>
+                            {job.error}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="mono" style={{ color: '#94a3b8' }}>
+                      {new Date(job.queuedAt).toLocaleString()}
+                    </td>
+                    <td className="mono" style={{ color: '#94a3b8' }}>
+                      {job.completedAt
+                        ? new Date(job.completedAt).toLocaleString()
+                        : job.startedAt
+                        ? `Started ${new Date(job.startedAt).toLocaleTimeString()}`
+                        : '—'}
+                    </td>
+                    <td className="mono" style={{ fontWeight: 700, color: '#fff' }}>
+                      {job.score ?? '—'}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <button
+                        className="button secondary"
+                        style={{ padding: '6px 12px', fontSize: '12px' }}
+                        disabled={busyJobId === job.id}
+                        onClick={() => handleRetryOrRerun(job)}
+                      >
+                        {busyJobId === job.id ? (
+                          <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                        ) : (
+                          <RotateCcw size={12} />
+                        )}
+                        {job.status === 'failed' ? 'Retry Job' : 'Rerun SKORE'}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -183,4 +252,3 @@ export default function QueuePage() {
     </div>
   );
 }
-

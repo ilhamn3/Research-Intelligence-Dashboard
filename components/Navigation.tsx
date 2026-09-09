@@ -13,9 +13,9 @@ import {
   Menu,
   Settings2,
   ShieldAlert,
-  Sparkles,
   X,
 } from 'lucide-react';
+import { useAuth } from '@/lib/useAuth';
 
 const mainNav = [
   { href: '/', label: 'Command Center', icon: Gauge },
@@ -29,19 +29,24 @@ const monitorNav = [
   { href: '/activity', label: 'Agent Activity', icon: Activity },
 ];
 
-const systemNav = [
-  { href: '/admin', label: 'Admin Controls', icon: Settings2 },
-  { href: '/login', label: 'Access Portal', icon: ShieldAlert },
-];
-
 export function Navigation() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { user, isAdmin } = useAuth();
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/';
     return pathname.startsWith(href);
   };
+
+  // Build dynamic operations navigation based on user role
+  const operationsNav = [];
+  if (isAdmin) {
+    operationsNav.push({ href: '/admin', label: 'Admin Controls', icon: Settings2, badge: 'ADMIN' });
+  }
+  if (!user) {
+    operationsNav.push({ href: '/login', label: 'Access Portal', icon: ShieldAlert });
+  }
 
   return (
     <>
@@ -87,21 +92,41 @@ export function Navigation() {
           </div>
         </div>
 
-        <div className="nav-group">
-          <div className="nav-group-label">Operations</div>
-          <div className="nav-section">
-            {systemNav.map(({ href, label, icon: Icon }) => (
-              <Link
-                key={href}
-                href={href}
-                className={`nav-link ${isActive(href) ? 'active' : ''}`}
-              >
-                <Icon size={16} />
-                <span>{label}</span>
-              </Link>
-            ))}
+        {operationsNav.length > 0 && (
+          <div className="nav-group">
+            <div className="nav-group-label">Operations</div>
+            <div className="nav-section">
+              {operationsNav.map(({ href, label, icon: Icon, badge }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`nav-link ${isActive(href) ? 'active' : ''}`}
+                  style={badge ? { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } : undefined}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <Icon size={16} />
+                    <span>{label}</span>
+                  </div>
+                  {badge && (
+                    <span
+                      style={{
+                        fontSize: '9px',
+                        padding: '1px 5px',
+                        borderRadius: 3,
+                        background: 'rgba(251, 191, 36, 0.2)',
+                        color: '#fbbf24',
+                        fontWeight: 700,
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      {badge}
+                    </span>
+                  )}
+                </Link>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="sidebar-bottom">
           <div className="system-status-indicator">
@@ -157,7 +182,7 @@ export function Navigation() {
             </div>
 
             <div className="nav-section" style={{ marginTop: '10px' }}>
-              {[...mainNav, ...monitorNav, ...systemNav].map(({ href, label, icon: Icon }) => (
+              {[...mainNav, ...monitorNav, ...operationsNav].map(({ href, label, icon: Icon }) => (
                 <Link
                   key={href}
                   href={href}

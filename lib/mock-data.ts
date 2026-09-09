@@ -30,9 +30,150 @@ export const jobs: SkoreJob[] = [
 ];
 
 export const reports: Report[] = [
-  { id: 'r1', companyId: 'c2', score: 74, generatedAt: '2026-09-04T16:31:00Z', factors: jobs[2].factors, reportUrl: '/reports/r1' },
-  { id: 'r2', companyId: 'c5', score: 91, generatedAt: '2026-09-03T11:26:00Z', factors: jobs[4].factors, reportUrl: '/reports/r2' },
-  { id: 'r3', companyId: 'c1', score: 82, generatedAt: '2026-09-01T10:04:00Z', factors: jobs[0].factors, reportUrl: '/reports/r3' },
+  {
+    id: 'r1',
+    companyId: 'c2',
+    score: 74,
+    generatedAt: '2026-09-04T16:31:00Z',
+    factors: [
+      { name: 'Cloud growth', impact: 11, weight: 0.35 },
+      { name: 'AI capex', impact: -6, weight: 0.25 },
+      { name: 'Valuation', impact: -3, weight: 0.2 },
+      { name: 'Recurring ARR', impact: 8, weight: 0.2 },
+    ],
+    reportUrl: '/reports/r1',
+    title: 'Microsoft Corporation (MSFT) Cloud Reacceleration & AI Capex Absorption',
+    generationStatus: 'certified',
+    executiveSummary:
+      'Azure expansion maintains strong enterprise tailwinds (+29% YoY currency-neutral). Near-term operating margins face marginal headwinds due to aggressive AI compute cluster buildouts, but software pricing power and Office 365 Copilot monetization offset infrastructure depreciation.',
+    investmentThesis:
+      'High-conviction defensive compounder. Commercial backlog growth (+19%) supports multi-year revenue visibility. Multiple compression risk is bounded by sustained double-digit free cash flow generation.',
+    keyCatalysts: [
+      'Next quarterly Azure cloud consumption disclosures',
+      'Copilot enterprise seat adoption conversion rates',
+      'Gross margin inflection following custom silicon deployments',
+    ],
+    riskFactors: [
+      'Accelerated hyperscale depreciation schedules lowering near-term GAAP operating income',
+      'Antitrust scrutiny around multi-model licensing agreements',
+    ],
+    sources: [
+      'MSFT Form 10-Q Amendment (SEC EDGAR)',
+      'WTFXAI Automated Channel Checks & Web Crawl Feed',
+      'Consensus Sell-Side Model Variance Ledger',
+    ],
+    modelVersion: 'WTFXAI-v2.4-NEURAL',
+    checksum: 'sha256:d8a9f3b20c1844b82193e2b9c71',
+    authorAgent: 'Agent-04 (Cloud Infrastructure Specialist)',
+  },
+  {
+    id: 'r2',
+    companyId: 'c5',
+    score: 91,
+    generatedAt: '2026-09-03T11:26:00Z',
+    factors: [
+      { name: 'Earnings momentum', impact: 18, weight: 0.35 },
+      { name: 'Pipeline', impact: 14, weight: 0.3 },
+      { name: 'Valuation', impact: -5, weight: 0.2 },
+      { name: 'Commercial Scale', impact: 10, weight: 0.15 },
+    ],
+    reportUrl: '/reports/r2',
+    title: 'Eli Lilly and Company (LLY) Incretin Franchise Monopoly & Capacity Ramping',
+    generationStatus: 'certified',
+    executiveSummary:
+      'Exceptional fundamental trajectory driven by unprecedented demand for Mounjaro and Zepbound. Manufacturing capacity expansions in North Carolina and Germany are coming online ahead of schedule, removing previously forecasted supply-cap constraints.',
+    investmentThesis:
+      'Top decile quantitative conviction. Oral GLP-1 (orforglipron) phase 3 readouts present substantial upside asymmetry. Premium forward multiple is justified by best-in-class EPS CAGR through 2030.',
+    keyCatalysts: [
+      'Phase 3 oral GLP-1 readout for diabetes and weight management',
+      'FDA manufacturing facility inspection clearance in Concord, NC',
+      'International reimbursement approvals across EU5 markets',
+    ],
+    riskFactors: [
+      'Compounding pharmacy litigation and legislative pricing intervention',
+      'Payer formulary tier adjustments in upcoming benefit cycle',
+    ],
+    sources: [
+      'FDA CDER Regulatory Filings & Inspection Ledger',
+      'Quarterly Incretin Prescription Volume Audit (IQVIA Feed)',
+      'WTFXAI Healthcare Factor Decomposition Engine',
+    ],
+    modelVersion: 'WTFXAI-v2.4-NEURAL',
+    checksum: 'sha256:f12a84e621bc498d98341b6c00a',
+    authorAgent: 'Agent-07 (BioPharma Pipeline Synthesizer)',
+  },
+  {
+    id: 'r3',
+    companyId: 'c1',
+    score: 82,
+    generatedAt: '2026-09-01T10:04:00Z',
+    factors: [
+      { name: 'Earnings momentum', impact: 14, weight: 0.3 },
+      { name: 'Valuation', impact: -4, weight: 0.25 },
+      { name: 'Market structure', impact: 9, weight: 0.2 },
+      { name: 'Estimate breadth', impact: 12, weight: 0.25 },
+    ],
+    reportUrl: '/reports/r3',
+    title: 'NVIDIA Corporation (NVDA) Datacenter Architecture Transition & Supply Velocity',
+    generationStatus: 'certified',
+    executiveSummary:
+      'Blackwell platform rack-scale ramp exhibits robust yield stabilization across TSMC CoWoS packaging nodes. Forward sovereign AI capex commitments provide significant backlog duration, partially insulating the order book from short-term tech enterprise variance.',
+    investmentThesis:
+      'Dominant technological moat with CUDA ecosystem lock-in. Gross margins remain resilient above 74%. Valuation multiples have normalized to attractive risk-reward levels relative to projected free cash flow growth.',
+    keyCatalysts: [
+      'Blackwell B200 hyperscale shipment volume validation',
+      'Sovereign AI infrastructure contract announcements',
+      'Next quarterly consensus earnings revision threshold',
+    ],
+    riskFactors: [
+      'Export control restrictions on next-generation accelerators',
+      'Power availability and datacenter interconnection bottlenecks',
+    ],
+    sources: [
+      'Taiwan Semiconductor Channel Supply Chain Audit',
+      'WTFXAI Quantitative Order Book & Filing Tracker',
+      'Global Datacenter Power Capacity Database',
+    ],
+    modelVersion: 'WTFXAI-v2.4-NEURAL',
+    checksum: 'sha256:4a08c5819d3f10ec8763914a298',
+    authorAgent: 'Agent-01 (Semiconductor Hardware Strategist)',
+  },
+  {
+    id: 'r4',
+    companyId: 'c3',
+    score: 85,
+    generatedAt: '2026-08-28T14:15:00Z',
+    factors: [
+      { name: 'Capital return', impact: 9, weight: 0.3 },
+      { name: 'Net interest margin', impact: 8, weight: 0.3 },
+      { name: 'Credit quality', impact: -4, weight: 0.25 },
+      { name: 'Fee revenue', impact: 6, weight: 0.15 },
+    ],
+    reportUrl: '/reports/r4',
+    title: 'JPMorgan Chase & Co. (JPM) Capital Resilience & Net Interest Trajectory',
+    generationStatus: 'in-review',
+    executiveSummary:
+      'Premier commercial and investment banking balance sheet with peer-leading return on tangible common equity (ROTCE > 18%). Net interest income guidance remains conservative with deposit beta stabilizing.',
+    investmentThesis:
+      'Highest quality systemic financial institution. Substantial excess capital buffers allow aggressive share repurchases while navigating potential Basel III endgame revisions.',
+    keyCatalysts: [
+      'Federal Reserve Basel III Endgame final rulemaking announcement',
+      'Investment banking advisory fee recovery velocity',
+      'Commercial real estate loan reserve absorption updates',
+    ],
+    riskFactors: [
+      'Rapid federal funds rate cuts compressing asset yields faster than deposit costs',
+      'Elevated net charge-offs in prime credit card portfolios',
+    ],
+    sources: [
+      'Federal Reserve Comprehensive Capital Analysis and Review (CCAR)',
+      'JPM Form 8-K Earnings Supplement',
+      'WTFXAI Interbank Credit Spread Monitor',
+    ],
+    modelVersion: 'WTFXAI-v2.4-NEURAL',
+    checksum: 'sha256:91b7e41982cf0012e847c21fa33',
+    authorAgent: 'Agent-03 (Financial Institutions Desk)',
+  },
 ];
 
 export const briefs: ResearchBrief[] = [];
