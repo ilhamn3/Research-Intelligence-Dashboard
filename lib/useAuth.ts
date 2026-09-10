@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { auth, getSupabaseClient, UserProfile } from './auth';
 
 export function useAuth() {
-  const [user, setUser] = useState<UserProfile | null>(auth.getStoredProfile());
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
 
   const refreshProfile = useCallback(async () => {
     try {
@@ -19,7 +20,8 @@ export function useAuth() {
   }, []);
 
   useEffect(() => {
-    // Initial check from storage & fetch current Supabase session
+    setMounted(true);
+    // Initial check from storage & fetch current Supabase session after mount
     setUser(auth.getStoredProfile());
     refreshProfile();
 
@@ -61,10 +63,13 @@ export function useAuth() {
     setLoading(false);
   };
 
+  const activeUser = mounted ? user : null;
+
   return {
-    user,
-    loading,
-    isAdmin: user?.role === 'admin',
+    user: activeUser,
+    loading: mounted ? loading : true,
+    isAdmin: mounted && (auth.isAdmin(activeUser) || activeUser?.role === 'admin'),
+    mounted,
     signOut,
     refreshProfile,
   };
