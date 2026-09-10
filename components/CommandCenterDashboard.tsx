@@ -101,10 +101,22 @@ export function CommandCenterDashboard({
   const [watchedIds, setWatchedIds] = useState<string[]>([]);
 
   useEffect(() => {
-    setWatchedIds(watchlistStore.getWatched(user?.id));
-    const handleWatchlistChange = () => {
+    if (user?.id) {
+      watchlistStore.fetchWatched(user.id).then((ids) => {
+        setWatchedIds(ids);
+      });
+    } else {
+      setWatchedIds(watchlistStore.getWatched());
+    }
+
+    const handleWatchlistChange = (e: Event) => {
+      const customEvent = e as CustomEvent<{ watchlist: string[]; userId?: string }>;
+      if (customEvent.detail?.userId && user?.id && customEvent.detail.userId !== user.id) {
+        return;
+      }
       setWatchedIds(watchlistStore.getWatched(user?.id));
     };
+
     window.addEventListener('wtfxai_watchlist_change', handleWatchlistChange);
     return () => {
       window.removeEventListener('wtfxai_watchlist_change', handleWatchlistChange);

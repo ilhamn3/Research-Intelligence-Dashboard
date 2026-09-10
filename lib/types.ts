@@ -45,6 +45,7 @@ export interface SkoreJob {
   error?: string;
   score?: number;
   factors: SkoreFactor[];
+  userId?: string;
 }
 
 export interface Report {
@@ -54,6 +55,7 @@ export interface Report {
   factors: SkoreFactor[];
   generatedAt: string;
   reportUrl?: string;
+  userId?: string;
   // Extended fields for Report Viewer capability
   title?: string;
   generationStatus?: ReportGenerationStatus;
@@ -74,6 +76,7 @@ export interface ResearchBrief {
   affectedFactors: { name: string; direction: 'up' | 'down' }[];
   watchNext: string[];
   evidence: string[];
+  userId?: string;
 }
 
 export interface ActivityItem {
@@ -83,6 +86,14 @@ export interface ActivityItem {
   detail: string;
   timestamp: string;
   companyId: string;
+  userId?: string;
+}
+
+export interface WatchlistItem {
+  id: string;
+  userId: string;
+  companyId: string;
+  createdAt?: string;
 }
 
 export interface DashboardStats {

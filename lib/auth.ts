@@ -494,6 +494,28 @@ export const auth = {
     return true;
   },
 
+  async getAuthToken(): Promise<string | null> {
+    const supabase = getSupabaseClient();
+    if (!supabase) return null;
+    try {
+      const { data } = await supabase.auth.getSession();
+      return data.session?.access_token || null;
+    } catch {
+      return null;
+    }
+  },
+
+  async getAuthenticatedUser(): Promise<User | null> {
+    const supabase = getSupabaseClient();
+    if (!supabase) return null;
+    try {
+      const { data } = await supabase.auth.getUser();
+      return data.user || null;
+    } catch {
+      return null;
+    }
+  },
+
   async signOut(): Promise<void> {
     const supabase = getSupabaseClient();
     if (supabase) {

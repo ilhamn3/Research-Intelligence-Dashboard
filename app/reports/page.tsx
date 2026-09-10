@@ -4,19 +4,25 @@ import Link from 'next/link';
 import {
   ArrowUpRight,
   BookOpen,
+  Calendar,
   CheckCircle2,
+  Clock,
   Download,
   Eye,
   FileCheck,
   FileDown,
   FileText,
+  Filter,
+  Loader2,
+  Plus,
   Search,
   Sparkles,
   TrendingUp,
   X,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { repository } from '@/lib/api';
+import { auth } from '@/lib/auth';
 import { Company, Report } from '@/lib/types';
 import { SectionHeader } from '@/components/SectionHeader';
 
@@ -27,20 +33,100 @@ export default function ReportsPage() {
   const [downloading, setDownloading] = useState<string | null>(null);
   const [previewReport, setPreviewReport] = useState<Report | null>(null);
 
-  useEffect(() => {
+  // Generate Report Modal
+  const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
+  const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState('');
+  const [genSuccess, setGenSuccess] = useState('');
+
+  // Date Filter States
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | '7d' | '30d' | 'custom'>('all');
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
+
+  const loadData = () => {
     Promise.all([repository.getReports(), repository.listCompanies()]).then(([r, c]) => {
       setReports(r);
       setCompanies(c);
+      if (c.length > 0 && !selectedCompanyId) {
+        setSelectedCompanyId(c[0].id);
+      }
     });
+  };
+
+  useEffect(() => {
+    loadData();
   }, []);
 
-  const companyMap = new Map(companies.map((c) => [c.id, c]));
+  const companyMap = useMemo(() => new Map(companies.map((c) => [c.id, c])), [companies]);
 
-  const filtered = reports.filter((report) => {
-    const comp = companyMap.get(report.companyId);
-    const text = `${report.id} ${report.companyId} ${comp?.name ?? ''} ${comp?.ticker ?? ''} ${report.title ?? ''}`.toLowerCase();
-    return text.includes(query.toLowerCase());
-  });
+  const filtered = useMemo(() => {
+    return reports.filter((report) => {
+      const comp = companyMap.get(report.companyId);
+      const text = `${report.id} ${report.companyId} ${comp?.name ?? ''} ${comp?.ticker ?? ''} ${report.title ?? ''}`.toLowerCase();
+      if (!text.includes(query.toLowerCase())) return false;
+
+      const repTime = new Date(report.generatedAt).getTime();
+      const now = Date.now();
+
+      if (dateFilter === 'today') {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        return repTime >= todayStart.getTime();
+      }
+      if (dateFilter === '7d') {
+        return repTime >= now - 7 * 86400000;
+      }
+      if (dateFilter === '30d') {
+        return repTime >= now - 30 * 86400000;
+      }
+      if (dateFilter === 'custom') {
+        if (customStart && repTime < new Date(customStart).setHours(0, 0, 0, 0)) return false;
+        if (customEnd && repTime > new Date(customEnd).setHours(23, 59, 59, 999)) return false;
+        return true;
+      }
+
+      return true;
+    });
+  }, [reports, companyMap, query, dateFilter, customStart, customEnd]);
+
+  const handleGenerateReport = async () => {
+    if (!selectedCompanyId) return;
+    setGenerating(true);
+    setGenError('');
+    setGenSuccess('');
+
+    try {
+      const token = await auth.getAuthToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/generate-report', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ companyId: selectedCompanyId }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Generation failed.');
+
+      if (data.report) {
+        setReports((prev) => [data.report, ...prev]);
+        setGenSuccess(
+          `Dossier generated successfully at ${new Date(data.report.generatedAt).toLocaleTimeString()}!`
+        );
+        setTimeout(() => {
+          setIsGenerateModalOpen(false);
+          setGenSuccess('');
+        }, 1500);
+      }
+    } catch (err) {
+      setGenError(err instanceof Error ? err.message : 'Unable to generate report.');
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const handleDownload = (id: string, ticker: string) => {
     setDownloading(id);
@@ -49,7 +135,16 @@ export default function ReportsPage() {
       const rep = reports.find((r) => r.id === id);
       const file = new Blob(
         [
-          `WTFXAI RESEARCH INTELLIGENCE DOSSIER\nTarget: ${ticker}\nReport ID: ${id.toUpperCase()}\nDate: ${new Date().toISOString()}\nStatus: ${(rep?.generationStatus || 'CERTIFIED').toUpperCase()}\nScore: ${rep?.score ?? 80}/100\n\nExecutive Summary:\n${rep?.executiveSummary || 'Multimodal research synthesis generated from primary filings and order books.'}\n`,
+          `WTFXAI RESEARCH INTELLIGENCE DOSSIER\nTarget: ${ticker}\nReport ID: ${id.toUpperCase()}\nDate: ${new Date(
+            rep?.generatedAt || Date.now()
+          ).toUTCString()}\nStatus: ${(rep?.generationStatus || 'CERTIFIED').toUpperCase()}\nScore: ${
+            rep?.score ?? 80
+          }/100\n\nExecutive Summary:\n${
+            rep?.executiveSummary ||
+            'Multimodal research synthesis generated from primary filings and order books.'
+          }\n\nInvestment Thesis:\n${
+            rep?.investmentThesis || 'High conviction factor momentum supported by quantitative metrics.'
+          }\n`,
         ],
         { type: 'text/plain' }
       );
@@ -65,13 +160,30 @@ export default function ReportsPage() {
   return (
     <div className="content">
       <div className="eyebrow">Desk Intelligence Artifacts</div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 12 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'baseline',
+          flexWrap: 'wrap',
+          gap: 12,
+        }}
+      >
         <h1 style={{ margin: '8px 0 0', fontSize: '28px', fontWeight: 700, color: '#fff' }}>
           Research Reports & Dossiers
         </h1>
-        <span className="status-chip">
-          <FileCheck size={13} color="#10b981" /> {reports.length} Certified Dossiers
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            className="button lime"
+            onClick={() => setIsGenerateModalOpen(true)}
+            style={{ fontSize: '13px' }}
+          >
+            <Plus size={15} /> Generate New Dossier
+          </button>
+          <span className="status-chip">
+            <FileCheck size={13} color="#10b981" /> {reports.length} Certified Dossiers
+          </span>
+        </div>
       </div>
 
       {/* Metric Highlights */}
@@ -127,8 +239,15 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* Search Bar */}
-      <div style={{ marginTop: 24 }}>
+      {/* Search Bar & Date Filter Ribbon */}
+      <div
+        style={{
+          marginTop: 24,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+        }}
+      >
         <div className="search-wrap">
           <input
             className="search"
@@ -138,6 +257,91 @@ export default function ReportsPage() {
             onChange={(e) => setQuery(e.target.value)}
           />
           <Search size={18} />
+        </div>
+
+        {/* Date Filter Bar */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 10,
+            padding: '10px 14px',
+            borderRadius: 8,
+            background: 'rgba(255, 255, 255, 0.02)',
+            border: '1px solid var(--line)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span
+              style={{
+                fontSize: '11px',
+                color: '#64748b',
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+            >
+              <Filter size={12} /> Date Range:
+            </span>
+            {(
+              [
+                { key: 'all', label: 'All Time' },
+                { key: 'today', label: 'Today' },
+                { key: '7d', label: 'Last 7 Days' },
+                { key: '30d', label: 'Last 30 Days' },
+                { key: 'custom', label: 'Custom' },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.key}
+                className={`pill-btn ${dateFilter === opt.key ? 'active' : ''}`}
+                onClick={() => setDateFilter(opt.key)}
+                style={{ fontSize: '11px', padding: '3px 10px' }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {dateFilter === 'custom' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid var(--line)',
+                  color: '#e2e8f0',
+                  borderRadius: 4,
+                  padding: '3px 8px',
+                  fontSize: '11px',
+                }}
+              />
+              <span style={{ color: '#64748b', fontSize: '11px' }}>to</span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid var(--line)',
+                  color: '#e2e8f0',
+                  borderRadius: 4,
+                  padding: '3px 8px',
+                  fontSize: '11px',
+                }}
+              />
+            </div>
+          )}
+
+          <span style={{ fontSize: '11px', color: '#64748b' }}>
+            Showing {filtered.length} of {reports.length} dossiers
+          </span>
         </div>
       </div>
 
@@ -163,12 +367,31 @@ export default function ReportsPage() {
               const comp = companyMap.get(report.companyId);
               const ticker = comp?.ticker ?? report.companyId.toUpperCase();
               const status = report.generationStatus || 'certified';
+              const genDate = new Date(report.generatedAt);
+              const datePart = genDate.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              });
+              const timePart = genDate.toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true,
+              });
+
               return (
                 <tr key={report.id}>
                   <td className="mono" style={{ color: '#38bdf8', fontWeight: 600 }}>
                     <Link
                       href={`/reports/${report.id}`}
-                      style={{ color: '#38bdf8', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                      style={{
+                        color: '#38bdf8',
+                        textDecoration: 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
                     >
                       {report.id.toUpperCase()} <ArrowUpRight size={12} />
                     </Link>
@@ -211,13 +434,10 @@ export default function ReportsPage() {
                     </span>
                   </td>
                   <td className="mono" style={{ color: '#94a3b8' }}>
-                    {new Date(report.generatedAt).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span style={{ color: '#e2e8f0', fontWeight: 500 }}>{datePart}</span>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>{timePart}</span>
+                    </div>
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
@@ -256,10 +476,125 @@ export default function ReportsPage() {
         {filtered.length === 0 && (
           <div className="empty">
             <FileText size={32} style={{ margin: '0 auto 12px', opacity: 0.4 }} />
-            <p style={{ margin: 0, fontSize: '14px', color: '#e2e8f0' }}>No dossiers match your search.</p>
+            <p style={{ margin: 0, fontSize: '14px', color: '#e2e8f0' }}>No dossiers match your search or date filter.</p>
           </div>
         )}
       </div>
+
+      {/* Generate Report Modal */}
+      {isGenerateModalOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 9999,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 20,
+          }}
+          onClick={() => !generating && setIsGenerateModalOpen(false)}
+        >
+          <div
+            className="panel"
+            style={{
+              width: '100%',
+              maxWidth: 500,
+              background: '#0d131f',
+              border: '1px solid rgba(56, 189, 248, 0.3)',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.8)',
+              padding: '24px 28px',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+              <div>
+                <div className="eyebrow">Desk Generation Engine</div>
+                <h2 style={{ margin: '4px 0 0', fontSize: '20px', fontWeight: 700, color: '#fff' }}>
+                  Generate Certified Research Dossier
+                </h2>
+              </div>
+              <button
+                onClick={() => !generating && setIsGenerateModalOpen(false)}
+                style={{ background: 'transparent', border: 0, color: '#94a3b8', cursor: 'pointer', padding: 4 }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <p style={{ color: '#94a3b8', fontSize: '13px', lineHeight: 1.5, margin: '0 0 16px' }}>
+              Select a coverage universe entity. The system will execute a multimodal synthesis across regulatory filings, factor sensitivities, and order book signals, creating a new timestamped dossier saved in the backend.
+            </p>
+
+            <div style={{ marginBottom: 18 }}>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#e2e8f0', marginBottom: 6 }}>
+                Target Entity
+              </label>
+              <select
+                value={selectedCompanyId}
+                onChange={(e) => setSelectedCompanyId(e.target.value)}
+                style={{
+                  width: '100%',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid var(--line)',
+                  color: '#fff',
+                  borderRadius: 6,
+                  padding: '10px 12px',
+                  fontSize: 13,
+                  fontFamily: 'DM Mono, monospace',
+                  outline: 'none',
+                }}
+              >
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id} style={{ background: '#0b0f19', color: '#fff' }}>
+                    {c.ticker} — {c.name} ({c.sector})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {genError && (
+              <div className="alert" style={{ marginBottom: 16, borderColor: 'rgba(244,63,94,0.3)', color: '#fb7185' }}>
+                {genError}
+              </div>
+            )}
+
+            {genSuccess && (
+              <div className="alert" style={{ marginBottom: 16, borderColor: 'rgba(16,185,129,0.4)', color: '#34d399' }}>
+                <CheckCircle2 size={15} style={{ display: 'inline', marginRight: 6 }} />
+                {genSuccess}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
+              <button
+                className="button secondary"
+                onClick={() => setIsGenerateModalOpen(false)}
+                disabled={generating}
+              >
+                Cancel
+              </button>
+              <button
+                className="button lime"
+                onClick={handleGenerateReport}
+                disabled={generating || !selectedCompanyId}
+              >
+                {generating ? (
+                  <>
+                    <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> Generating Dossier...
+                  </>
+                ) : (
+                  <>
+                    <FileText size={15} /> Execute & Save Dossier
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quick View Drawer / Modal */}
       {previewReport && (

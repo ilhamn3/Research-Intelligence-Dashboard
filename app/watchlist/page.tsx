@@ -16,14 +16,18 @@ export default function WatchlistPage() {
   const [latestTriggers, setLatestTriggers] = useState<Record<string, Trigger | undefined>>({});
 
   const loadWatchlist = useCallback(() => {
-    setWatched(watchlistStore.getWatched());
+    watchlistStore.fetchWatched().then((ids) => {
+      setWatched(ids);
+    });
   }, []);
 
   useEffect(() => {
     loadWatchlist();
     repository.listCompanies().then(setCompanies);
 
-    const handleChange = () => loadWatchlist();
+    const handleChange = () => {
+      setWatched(watchlistStore.getWatched());
+    };
     window.addEventListener('wtfxai_watchlist_change', handleChange);
     return () => window.removeEventListener('wtfxai_watchlist_change', handleChange);
   }, [loadWatchlist]);
@@ -43,12 +47,12 @@ export default function WatchlistPage() {
 
   const items = companies.filter((company) => watched.includes(company.id));
 
-  const removeCompany = (id: string) => {
-    watchlistStore.remove(id);
+  const removeCompany = async (id: string) => {
+    await watchlistStore.remove(id);
   };
 
-  const resetWatchlist = () => {
-    watchlistStore.reset();
+  const resetWatchlist = async () => {
+    await watchlistStore.reset();
   };
 
   return (
