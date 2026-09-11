@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/useAuth';
 import { watchlistStore } from '@/lib/watchlist';
+import { repository } from '@/lib/api';
 import {
   ArrowUpRight,
   BarChart3,
@@ -84,12 +85,16 @@ const DEFAULT_SECTOR_FACTORS: Record<string, SkoreFactor[]> = {
 
 export function CommandCenterDashboard({
   stats,
-  activity,
+  activity: initialActivity,
   companies,
-  jobs,
+  jobs: initialJobs,
   reports,
   triggers,
 }: CommandCenterDashboardProps) {
+  const [currentJobs, setCurrentJobs] = useState<SkoreJob[]>(initialJobs);
+  const [currentActivity, setCurrentActivity] = useState<ActivityItem[]>(initialActivity);
+  const jobs = currentJobs;
+  const activity = currentActivity;
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>(
     companies.find((c) => c.id === 'c1')?.id || companies[0]?.id || 'c1'
   );
@@ -99,6 +104,12 @@ export function CommandCenterDashboard({
 
   const { user } = useAuth();
   const [watchedIds, setWatchedIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    // Sync latest real-time jobs and activity from backend repository
+    repository.getJobs().then(setCurrentJobs);
+    repository.getActivity().then(setCurrentActivity);
+  }, []);
 
   useEffect(() => {
     if (user?.id) {
@@ -138,8 +149,8 @@ export function CommandCenterDashboard({
   );
 
   const focusJob = useMemo(
-    () => jobs.find((j) => j.companyId === selectedCompany?.id) || jobs[0],
-    [jobs, selectedCompany]
+    () => currentJobs.find((j) => j.companyId === selectedCompany?.id) || currentJobs[0],
+    [currentJobs, selectedCompany]
   );
 
   // Active factors for selected company
@@ -488,7 +499,7 @@ export function CommandCenterDashboard({
       <div className="command-grid">
         <div className="command-primary">
           {/* Real Historical Dynamic Correlation Chart */}
-          <CorrelationChart reports={reports} jobs={jobs} companies={companies} />
+          <CorrelationChart reports={reports} jobs={currentJobs} companies={companies} />
 
           {/* System Trigger Log */}
           <section className="dark-panel system-log">
@@ -510,31 +521,44 @@ export function CommandCenterDashboard({
               <span style={{ textAlign: 'center' }}>Impact</span>
             </div>
 
-            {activity.slice(0, 5).map((item, index) => (
-              <div className="log-row" key={item.id}>
-                <div>
-                  <b>
-                    {new Date(item.timestamp).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
-                  </b>
-                  <small>{item.type.toUpperCase()}</small>
+            {currentActivity.slice(0, 5).map((item) => {
+              const isCritical =
+                item.type === 'error' ||
+                item.title.toLowerCase().includes('fail') ||
+                item.detail.toLowerCase().includes('delay') ||
+                item.detail.toLowerCase().includes('paused');
+
+              const isMonitor =
+                item.type === 'decision' ||
+                item.title.toLowerCase().includes('monitor') ||
+                item.detail.toLowerCase().includes('threshold') ||
+                item.detail.toLowerCase().includes('spread');
+
+              const impactLabel = isCritical ? 'Critical' : isMonitor ? 'Monitor' : 'Positive';
+              const impactClass = isCritical ? 'critical' : isMonitor ? 'monitor' : 'positive';
+
+              return (
+                <div className="log-row" key={item.id}>
+                  <div>
+                    <b>
+                      {new Date(item.timestamp).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </b>
+                    <small>{item.type.toUpperCase()}</small>
+                  </div>
+                  <div>
+                    <strong>{item.title}</strong>
+                    <p>{item.detail}</p>
+                  </div>
+                  <span className={`impact ${impactClass}`}>
+                    {impactLabel}
+                  </span>
                 </div>
-                <div>
-                  <strong>{item.title}</strong>
-                  <p>{item.detail}</p>
-                </div>
-                <span
-                  className={`impact ${
-                    item.type === 'error' ? 'critical' : index === 1 ? 'monitor' : 'positive'
-                  }`}
-                >
-                  {item.type === 'error' ? 'Critical' : index === 1 ? 'Monitor' : 'Positive'}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </section>
         </div>
 
@@ -622,8 +646,9 @@ export function CommandCenterDashboard({
               <span>ANALYZING SENTIMENT & FILINGS...</span>
             </div>
 
-            {jobs.slice(0, 3).map((job) => {
+            {currentJobs.slice(0, 3).map((job) => {
               const comp = companyMap.get(job.companyId);
+              const isLive = job.status === 'started';
               return (
                 <div className="job-card" key={job.id}>
                   <span className="job-icon">
@@ -632,13 +657,19 @@ export function CommandCenterDashboard({
                   <div>
                     <b>
                       {comp?.ticker ?? job.companyId.toUpperCase()} ·{' '}
-                      {job.status === 'started' ? 'Live processing' : 'Synthesizing'}
+                      {isLive ? 'Live processing' : job.status === 'queued' ? 'Queued for run' : 'Synthesizing'}
                     </b>
-                    <small>{job.status === 'started' ? 'Running neural pass' : 'Updated recently'}</small>
+                    <small>
+                      {isLive
+                        ? 'Running neural pass'
+                        : job.status === 'queued'
+                        ? 'Awaiting worker thread'
+                        : 'Updated recently'}
+                    </small>
                   </div>
                   <CheckCircle2
                     size={16}
-                    className={job.status === 'started' ? 'job-live' : 'job-dim'}
+                    className={isLive ? 'job-live' : 'job-dim'}
                   />
                 </div>
               );
