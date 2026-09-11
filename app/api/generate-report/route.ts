@@ -138,19 +138,19 @@ Return STRICT JSON only with keys:
           }
         );
 
-        if (geminiRes.ok) {
+         if (geminiRes.ok) {
           const payload = await geminiRes.json();
           const text = payload.candidates?.[0]?.content?.parts?.[0]?.text?.replace(/^```json\s*|\s*```$/g, '');
           if (text) {
             const parsed = JSON.parse(text);
             synthesized = {
               ...synthesized,
-              title: parsed.title || synthesized.title,
-              executiveSummary: parsed.executiveSummary || synthesized.executiveSummary,
-              investmentThesis: parsed.investmentThesis || synthesized.investmentThesis,
-              keyCatalysts: parsed.keyCatalysts || synthesized.keyCatalysts,
-              riskFactors: parsed.riskFactors || synthesized.riskFactors,
-              sources: parsed.sources || synthesized.sources,
+              title: (typeof parsed.title === 'string' && parsed.title.trim()) ? parsed.title : synthesized.title,
+              executiveSummary: (typeof parsed.executiveSummary === 'string' && parsed.executiveSummary.trim()) ? parsed.executiveSummary : synthesized.executiveSummary,
+              investmentThesis: (typeof parsed.investmentThesis === 'string' && parsed.investmentThesis.trim()) ? parsed.investmentThesis : synthesized.investmentThesis,
+              keyCatalysts: (Array.isArray(parsed.keyCatalysts) && parsed.keyCatalysts.length > 0) ? parsed.keyCatalysts : synthesized.keyCatalysts,
+              riskFactors: (Array.isArray(parsed.riskFactors) && parsed.riskFactors.length > 0) ? parsed.riskFactors : synthesized.riskFactors,
+              sources: (Array.isArray(parsed.sources) && parsed.sources.length > 0) ? parsed.sources : synthesized.sources,
             };
           }
         }

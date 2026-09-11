@@ -84,8 +84,10 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
         return repTime >= now - 30 * 86400000;
       }
       if (dateFilter === 'custom') {
-        if (customStart && repTime < new Date(customStart).setHours(0, 0, 0, 0)) return false;
-        if (customEnd && repTime > new Date(customEnd).setHours(23, 59, 59, 999)) return false;
+        const effectiveStart = customStart && customEnd && customStart > customEnd ? customEnd : customStart;
+        const effectiveEnd = customStart && customEnd && customStart > customEnd ? customStart : customEnd;
+        if (effectiveStart && repTime < new Date(effectiveStart).setHours(0, 0, 0, 0)) return false;
+        if (effectiveEnd && repTime > new Date(effectiveEnd).setHours(23, 59, 59, 999)) return false;
         return true;
       }
       return true;

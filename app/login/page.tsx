@@ -291,7 +291,7 @@ function LoginForm() {
             }}
           >
             <div>{error}</div>
-            {error.toLowerCase().includes('email not confirmed') && (
+            {(error.toLowerCase().includes('confirm') || error.toLowerCase().includes('not confirmed') || error.toLowerCase().includes('verify')) && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
                 <button
                   type="button"
