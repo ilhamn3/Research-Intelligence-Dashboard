@@ -232,6 +232,7 @@ create policy "jobs_insert_policy"
   on public.skore_jobs for insert
   with check (
     auth.uid() = user_id
+    or user_id is null
     or public.is_admin()
   );
 
@@ -239,10 +240,12 @@ create policy "jobs_update_policy"
   on public.skore_jobs for update
   using (
     auth.uid() = user_id
+    or user_id is null
     or public.is_admin()
   )
   with check (
     auth.uid() = user_id
+    or user_id is null
     or public.is_admin()
   );
 

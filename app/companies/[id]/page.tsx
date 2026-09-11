@@ -149,6 +149,7 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
       if (!response.ok) throw new Error(data.error ?? 'Report generation failed.');
 
       if (data.report) {
+        await repository.saveReport(data.report);
         setReports((prev) => [data.report, ...prev.filter((r) => r.id !== data.report.id)]);
         const formattedDate = new Date(data.report.generatedAt).toLocaleTimeString('en-US', {
           hour: '2-digit',

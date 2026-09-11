@@ -21,6 +21,7 @@ export interface DashboardRepository {
   saveBrief(brief: ResearchBrief): Promise<ResearchBrief>;
   retryJob(id: string): Promise<SkoreJob>;
   rerunJob(companyId: string): Promise<SkoreJob>;
+  completeJob(id: string): Promise<SkoreJob>;
 }
 
 // In-memory runtime state clone for dynamic local fallbacks
@@ -51,6 +52,100 @@ async function query<T>(request: PromiseLike<{ data: T | null; error: { message:
   const { data, error } = await request;
   if (error) throw new Error(`Supabase query failed: ${error.message}`);
   return data ?? ([] as T);
+}
+
+const REPORTS_STORAGE_KEY = 'wtfxai_persistent_reports';
+
+function getLocalReports(userId?: string): Report[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(REPORTS_STORAGE_KEY);
+    if (raw) {
+      const parsed: Report[] = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        if (!userId) return parsed;
+        return parsed.filter((r) => !r.userId || r.userId === userId);
+      }
+    }
+  } catch {}
+  return [];
+}
+
+function saveLocalReport(report: Report) {
+  if (typeof window === 'undefined') return;
+  try {
+    const existing = getLocalReports();
+    const updated = [report, ...existing.filter((r) => r.id.toLowerCase() !== report.id.toLowerCase())];
+    localStorage.setItem(REPORTS_STORAGE_KEY, JSON.stringify(updated));
+  } catch {}
+}
+
+const JOBS_STORAGE_KEY = 'wtfxai_persistent_jobs';
+
+function getLocalJobs(userId?: string): SkoreJob[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(JOBS_STORAGE_KEY);
+    if (raw) {
+      const parsed: SkoreJob[] = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        if (!userId) return parsed;
+        return parsed.filter((j) => !j.userId || j.userId === userId);
+      }
+    }
+  } catch {}
+  return [];
+}
+
+function saveLocalJob(job: SkoreJob) {
+  if (typeof window === 'undefined') return;
+  try {
+    const existing = getLocalJobs();
+    const updated = [job, ...existing.filter((j) => j.id.toLowerCase() !== job.id.toLowerCase())];
+    localStorage.setItem(JOBS_STORAGE_KEY, JSON.stringify(updated));
+  } catch {}
+}
+
+function parseReportRow(row: Record<string, unknown>): Report {
+  let factors = (row.factors as Report['factors']) ?? [];
+  let metadata: Partial<Report> = {};
+
+  if (row.factors && typeof row.factors === 'object' && !Array.isArray(row.factors)) {
+    const packed = row.factors as Record<string, unknown>;
+    factors = (packed.factors as Report['factors']) ?? [];
+    metadata = {
+      title: packed.title as string | undefined,
+      generationStatus: packed.generationStatus as Report['generationStatus'],
+      executiveSummary: packed.executiveSummary as string | undefined,
+      investmentThesis: packed.investmentThesis as string | undefined,
+      keyCatalysts: packed.keyCatalysts as string[] | undefined,
+      riskFactors: packed.riskFactors as string[] | undefined,
+      sources: packed.sources as string[] | undefined,
+      modelVersion: packed.modelVersion as string | undefined,
+      checksum: packed.checksum as string | undefined,
+      authorAgent: packed.authorAgent as string | undefined,
+    };
+  }
+
+  return {
+    id: row.id as string,
+    companyId: row.company_id as string,
+    score: Number(row.score),
+    factors,
+    generatedAt: row.generated_at as string,
+    reportUrl: (row.report_url as string) ?? `/reports/${row.id}`,
+    userId: (row.user_id as string) ?? undefined,
+    title: (row.title as string) ?? metadata.title,
+    generationStatus: (row.generation_status as Report['generationStatus']) ?? metadata.generationStatus ?? 'certified',
+    executiveSummary: (row.executive_summary as string) ?? metadata.executiveSummary,
+    investmentThesis: (row.investment_thesis as string) ?? metadata.investmentThesis,
+    keyCatalysts: (row.key_catalysts as string[]) ?? metadata.keyCatalysts,
+    riskFactors: (row.risk_factors as string[]) ?? metadata.riskFactors,
+    sources: (row.sources as string[]) ?? metadata.sources,
+    modelVersion: (row.model_version as string) ?? metadata.modelVersion,
+    checksum: (row.checksum as string) ?? metadata.checksum,
+    authorAgent: (row.author_agent as string) ?? metadata.authorAgent,
+  };
 }
 
 export const repository: DashboardRepository = {
@@ -172,29 +267,72 @@ export const repository: DashboardRepository = {
       } catch {}
     }
 
-    try {
-      const client = getSupabase();
-      if (client) {
-        let request = client.from('skore_jobs').select('*').order('queued_at', { ascending: false });
-        if (companyId) request = request.eq('company_id', companyId);
-        const rows = await query<Array<Record<string, unknown>>>(request);
-        if (rows && rows.length > 0) {
-          return rows.map((row) => ({
-            id: row.id as string,
-            companyId: row.company_id as string,
-            status: row.status as SkoreJob['status'],
-            queuedAt: row.queued_at as string,
-            startedAt: (row.started_at as string) ?? undefined,
-            completedAt: (row.completed_at as string) ?? undefined,
-            error: (row.error as string) ?? undefined,
-            score: (row.score as number) ?? undefined,
-            factors: (row.factors as SkoreJob['factors']) ?? [],
-            userId: (row.user_id as string) ?? undefined,
-          }));
+    let fetchedJobs: SkoreJob[] = [];
+
+    // Query backend API route
+    if (typeof window !== 'undefined') {
+      try {
+        const res = await fetch(`/api/jobs${companyId ? `?company_id=${companyId}` : ''}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.jobs && Array.isArray(json.jobs) && json.jobs.length > 0) {
+            fetchedJobs = json.jobs;
+          }
         }
+      } catch {}
+    }
+
+    // Direct Supabase query if API didn't return rows
+    if (fetchedJobs.length === 0) {
+      try {
+        const client = getSupabase();
+        if (client) {
+          let request = client.from('skore_jobs').select('*').order('queued_at', { ascending: false });
+          if (companyId) request = request.eq('company_id', companyId);
+          const rows = await query<Array<Record<string, unknown>>>(request);
+          if (rows && rows.length > 0) {
+            fetchedJobs = rows.map((row) => ({
+              id: row.id as string,
+              companyId: row.company_id as string,
+              status: row.status as SkoreJob['status'],
+              queuedAt: row.queued_at as string,
+              startedAt: (row.started_at as string) ?? undefined,
+              completedAt: (row.completed_at as string) ?? undefined,
+              error: (row.error as string) ?? undefined,
+              score: (row.score as number) ?? undefined,
+              factors: (row.factors as SkoreJob['factors']) ?? [],
+              userId: (row.user_id as string) ?? undefined,
+            }));
+          }
+        }
+      } catch {}
+    }
+
+    // Fallback baseline if DB is empty
+    const baseList = fetchedJobs.length > 0 ? fetchedJobs : (companyId ? mock.jobs.filter((j) => j.companyId === companyId) : mock.jobs);
+
+    // Merge baseline with activeJobs and persistent local storage
+    const mergedMap = new Map<string, SkoreJob>();
+    baseList.forEach((j) => mergedMap.set(j.id.toLowerCase(), j));
+
+    const activeList = companyId ? activeJobs.filter((j) => j.companyId === companyId) : activeJobs;
+    activeList.forEach((j) => {
+      const existing = mergedMap.get(j.id.toLowerCase());
+      if (!existing || existing.status !== j.status || j.completedAt) {
+        mergedMap.set(j.id.toLowerCase(), j);
       }
-    } catch {}
-    return companyId ? activeJobs.filter((j) => j.companyId === companyId) : activeJobs;
+    });
+
+    const localJobs = getLocalJobs();
+    localJobs.forEach((j) => {
+      if (!companyId || j.companyId === companyId) {
+        mergedMap.set(j.id.toLowerCase(), j);
+      }
+    });
+
+    return Array.from(mergedMap.values()).sort(
+      (a, b) => new Date(b.queuedAt).getTime() - new Date(a.queuedAt).getTime()
+    );
   },
 
   getJob: async (id) => {
@@ -241,6 +379,7 @@ export const repository: DashboardRepository = {
       } catch {}
     }
 
+    let dbReports: Report[] = [];
     try {
       const client = getSupabase();
       if (client) {
@@ -248,60 +387,81 @@ export const repository: DashboardRepository = {
         if (companyId) request = request.eq('company_id', companyId);
         const rows = await query<Array<Record<string, unknown>>>(request);
         if (rows && rows.length > 0) {
-          return rows.map((row) => {
-            // Handle packed factors payload or standard column format
-            let factors = (row.factors as Report['factors']) ?? [];
-            let metadata: Partial<Report> = {};
-
-            if (row.factors && typeof row.factors === 'object' && !Array.isArray(row.factors)) {
-              const packed = row.factors as Record<string, unknown>;
-              factors = (packed.factors as Report['factors']) ?? [];
-              metadata = {
-                title: packed.title as string | undefined,
-                generationStatus: packed.generationStatus as Report['generationStatus'],
-                executiveSummary: packed.executiveSummary as string | undefined,
-                investmentThesis: packed.investmentThesis as string | undefined,
-                keyCatalysts: packed.keyCatalysts as string[] | undefined,
-                riskFactors: packed.riskFactors as string[] | undefined,
-                sources: packed.sources as string[] | undefined,
-                modelVersion: packed.modelVersion as string | undefined,
-                checksum: packed.checksum as string | undefined,
-                authorAgent: packed.authorAgent as string | undefined,
-              };
-            }
-
-            return {
-              id: row.id as string,
-              companyId: row.company_id as string,
-              score: Number(row.score),
-              factors,
-              generatedAt: row.generated_at as string,
-              reportUrl: (row.report_url as string) ?? `/reports/${row.id}`,
-              userId: (row.user_id as string) ?? undefined,
-              title: (row.title as string) ?? metadata.title,
-              generationStatus: (row.generation_status as Report['generationStatus']) ?? metadata.generationStatus ?? 'certified',
-              executiveSummary: (row.executive_summary as string) ?? metadata.executiveSummary,
-              investmentThesis: (row.investment_thesis as string) ?? metadata.investmentThesis,
-              keyCatalysts: (row.key_catalysts as string[]) ?? metadata.keyCatalysts,
-              riskFactors: (row.risk_factors as string[]) ?? metadata.riskFactors,
-              sources: (row.sources as string[]) ?? metadata.sources,
-              modelVersion: (row.model_version as string) ?? metadata.modelVersion,
-              checksum: (row.checksum as string) ?? metadata.checksum,
-              authorAgent: (row.author_agent as string) ?? metadata.authorAgent,
-            };
-          });
+          dbReports = rows.map((row) => parseReportRow(row));
         }
       }
     } catch (err) {
       console.warn('Supabase getReports query fallback to local:', err);
     }
 
-    return companyId ? activeReports.filter((r) => r.companyId === companyId) : activeReports;
+    // Merge database reports, browser persistent storage reports, and in-memory activeReports
+    const local = getLocalReports();
+    const combined = [...local, ...activeReports, ...dbReports];
+    const deduplicated = new Map<string, Report>();
+
+    for (const rep of combined) {
+      if (!deduplicated.has(rep.id.toLowerCase())) {
+        deduplicated.set(rep.id.toLowerCase(), rep);
+      }
+    }
+
+    const allReports = Array.from(deduplicated.values()).sort((a, b) =>
+      b.generatedAt.localeCompare(a.generatedAt)
+    );
+
+    return companyId ? allReports.filter((r) => r.companyId === companyId) : allReports;
   },
 
-  getReport: async (id) => {
+  getReport: async (id: string) => {
+    if (!id) return undefined;
+    const cleanId = id.toLowerCase().trim();
+
+    // 1. Check in-memory activeReports
+    const inMem = activeReports.find((r) => r.id.toLowerCase() === cleanId);
+    if (inMem) return inMem;
+
+    // 2. Check browser persistent storage
+    const stored = getLocalReports();
+    const inStored = stored.find((r) => r.id.toLowerCase() === cleanId);
+    if (inStored) return inStored;
+
+    // 3. Query Supabase directly for this single report
+    try {
+      const client = getSupabase();
+      if (client) {
+        const { data, error } = await client
+          .from('reports')
+          .select('*')
+          .ilike('id', cleanId)
+          .maybeSingle();
+
+        if (data && !error) {
+          const parsed = parseReportRow(data);
+          activeReports.unshift(parsed);
+          saveLocalReport(parsed);
+          return parsed;
+        }
+      }
+    } catch {}
+
+    // 4. In browser, try querying server API endpoint /api/generate-report?id=...
+    if (typeof window !== 'undefined') {
+      try {
+        const res = await fetch(`/api/generate-report?id=${encodeURIComponent(cleanId)}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.report) {
+            activeReports.unshift(json.report);
+            saveLocalReport(json.report);
+            return json.report;
+          }
+        }
+      } catch {}
+    }
+
+    // 5. Fallback: all reports
     const all = await repository.getReports();
-    return all.find((r) => r.id.toLowerCase() === id.toLowerCase());
+    return all.find((r) => r.id.toLowerCase() === cleanId);
   },
 
   saveReport: async (report: Report): Promise<Report> => {
@@ -359,7 +519,8 @@ export const repository: DashboardRepository = {
       console.warn('Supabase saveReport fallback:', err);
     }
 
-    // Prepend to runtime active state
+    // Persist to browser persistent storage and in-memory runtime
+    saveLocalReport(reportWithUser);
     activeReports = [reportWithUser, ...activeReports.filter((r) => r.id !== reportWithUser.id)];
     return reportWithUser;
   },
@@ -492,16 +653,41 @@ export const repository: DashboardRepository = {
   },
 
   retryJob: async (id) => {
-    const jobIndex = activeJobs.findIndex((j) => j.id === id);
     const completedAt = new Date().toISOString();
     const activeUserId = typeof window !== 'undefined' ? auth.getStoredProfile()?.id : undefined;
 
     const updatedFactors = [
-      { name: 'Regulatory rate base', impact: 5, weight: 0.35 },
-      { name: 'Debt service cost', impact: -6, weight: 0.35 },
-      { name: 'Clean power capacity', impact: 8, weight: 0.3 },
+      { name: 'Regulatory rate base', impact: 6, weight: 0.35 },
+      { name: 'Debt service cost', impact: -4, weight: 0.35 },
+      { name: 'Clean power capacity', impact: 9, weight: 0.3 },
     ];
 
+    let retried: SkoreJob | null = null;
+
+    // 1. Call backend API route
+    if (typeof window !== 'undefined') {
+      try {
+        const token = await auth.getAuthToken();
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch('/api/jobs', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ action: 'retry', jobId: id }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.job) {
+            retried = json.job;
+          }
+        }
+      } catch (err) {
+        console.warn('API route retryJob fallback:', err);
+      }
+    }
+
+    // 2. Direct Supabase update attempt
     try {
       const client = getSupabase();
       if (client) {
@@ -514,41 +700,38 @@ export const repository: DashboardRepository = {
             completed_at: completedAt,
             score: 83,
             factors: updatedFactors,
+            ...(activeUserId ? { user_id: activeUserId } : {}),
           })
           .eq('id', id);
       }
     } catch (err) {
-      console.warn('Supabase retryJob update fallback:', err);
+      console.warn('Supabase direct retryJob update:', err);
     }
 
-    if (jobIndex >= 0) {
-      const existing = activeJobs[jobIndex];
-      const updated: SkoreJob = {
-        ...existing,
-        status: 'completed',
-        error: undefined,
-        startedAt: completedAt,
-        completedAt,
-        score: existing.score || 83,
-        factors: existing.factors.length > 0 ? existing.factors : updatedFactors,
-        userId: activeUserId,
-      };
-      activeJobs[jobIndex] = updated;
-      return updated;
-    }
+    const jobIndex = activeJobs.findIndex((j) => j.id.toLowerCase() === id.toLowerCase());
+    const existing = jobIndex >= 0 ? activeJobs[jobIndex] : undefined;
 
-    const fallbackJob: SkoreJob = {
+    const finalJob: SkoreJob = retried ?? {
       id,
-      companyId: 'c1',
+      companyId: existing?.companyId ?? 'c4',
       status: 'completed',
-      queuedAt: completedAt,
+      queuedAt: existing?.queuedAt ?? completedAt,
+      startedAt: completedAt,
       completedAt,
+      error: undefined,
       score: 83,
       factors: updatedFactors,
-      userId: activeUserId,
+      userId: activeUserId ?? existing?.userId,
     };
-    activeJobs.unshift(fallbackJob);
-    return fallbackJob;
+
+    if (jobIndex >= 0) {
+      activeJobs[jobIndex] = finalJob;
+    } else {
+      activeJobs.unshift(finalJob);
+    }
+
+    saveLocalJob(finalJob);
+    return finalJob;
   },
 
   rerunJob: async (companyId) => {
@@ -556,42 +739,146 @@ export const repository: DashboardRepository = {
     const now = new Date().toISOString();
     const activeUserId = typeof window !== 'undefined' ? auth.getStoredProfile()?.id : undefined;
 
-    const newJob: SkoreJob = {
-      id: newId,
-      companyId,
-      status: 'started',
-      queuedAt: now,
-      startedAt: now,
-      score: 84,
-      factors: [
-        { name: 'Earnings momentum', impact: 12, weight: 0.35 },
-        { name: 'Valuation multiple', impact: -3, weight: 0.25 },
-        { name: 'Market structure', impact: 7, weight: 0.2 },
-        { name: 'Estimate breadth', impact: 9, weight: 0.2 },
-      ],
-      userId: activeUserId,
-    };
+    let createdJob: SkoreJob | null = null;
+
+    // 1. Call backend API route
+    if (typeof window !== 'undefined') {
+      try {
+        const token = await auth.getAuthToken();
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch('/api/jobs', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ action: 'rerun', companyId }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.job) {
+            createdJob = json.job;
+          }
+        }
+      } catch (err) {
+        console.warn('API route rerunJob fallback:', err);
+      }
+    }
+
+    if (!createdJob) {
+      createdJob = {
+        id: newId,
+        companyId,
+        status: 'started',
+        queuedAt: now,
+        startedAt: now,
+        score: 84,
+        factors: [
+          { name: 'Earnings momentum', impact: 14, weight: 0.35 },
+          { name: 'Valuation multiple', impact: -2, weight: 0.25 },
+          { name: 'Market structure', impact: 8, weight: 0.2 },
+          { name: 'Estimate breadth', impact: 10, weight: 0.2 },
+        ],
+        userId: activeUserId,
+      };
+
+      try {
+        const client = getSupabase();
+        if (client) {
+          await client.from('skore_jobs').insert([
+            {
+              id: createdJob.id,
+              company_id: createdJob.companyId,
+              status: createdJob.status,
+              queued_at: createdJob.queuedAt,
+              started_at: createdJob.startedAt,
+              score: createdJob.score,
+              factors: createdJob.factors,
+              user_id: activeUserId ?? null,
+            },
+          ]);
+        }
+      } catch (err) {
+        console.warn('Supabase rerunJob direct insert:', err);
+      }
+    }
+
+    activeJobs.unshift(createdJob);
+    saveLocalJob(createdJob);
+    return createdJob;
+  },
+
+  completeJob: async (id) => {
+    const completedAt = new Date().toISOString();
+    const activeUserId = typeof window !== 'undefined' ? auth.getStoredProfile()?.id : undefined;
+
+    let completed: SkoreJob | null = null;
+
+    if (typeof window !== 'undefined') {
+      try {
+        const token = await auth.getAuthToken();
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch('/api/jobs', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ action: 'complete', jobId: id }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.completedAt) {
+            // successful
+          }
+        }
+      } catch (err) {
+        console.warn('API route completeJob fallback:', err);
+      }
+    }
 
     try {
       const client = getSupabase();
       if (client) {
-        const row: Record<string, unknown> = {
-          id: newJob.id,
-          company_id: newJob.companyId,
-          status: newJob.status,
-          queued_at: newJob.queuedAt,
-          started_at: newJob.startedAt,
-          score: newJob.score,
-          factors: newJob.factors,
-        };
-        if (activeUserId) row.user_id = activeUserId;
-        await client.from('skore_jobs').insert([row]);
+        await client
+          .from('skore_jobs')
+          .update({
+            status: 'completed',
+            completed_at: completedAt,
+            ...(activeUserId ? { user_id: activeUserId } : {}),
+          })
+          .eq('id', id);
       }
     } catch (err) {
-      console.warn('Supabase rerunJob insert fallback:', err);
+      console.warn('Supabase direct completeJob update:', err);
     }
 
-    activeJobs.unshift(newJob);
-    return newJob;
+    const jobIndex = activeJobs.findIndex((j) => j.id.toLowerCase() === id.toLowerCase());
+    const existing = jobIndex >= 0 ? activeJobs[jobIndex] : undefined;
+
+    const finalJob: SkoreJob = {
+      id,
+      companyId: existing?.companyId ?? 'c1',
+      status: 'completed',
+      queuedAt: existing?.queuedAt ?? completedAt,
+      startedAt: existing?.startedAt ?? completedAt,
+      completedAt,
+      error: undefined,
+      score: existing?.score ?? 85,
+      factors: existing?.factors && existing.factors.length > 0 ? existing.factors : [
+        { name: 'Earnings momentum', impact: 14, weight: 0.35 },
+        { name: 'Valuation multiple', impact: -2, weight: 0.25 },
+        { name: 'Market structure', impact: 8, weight: 0.2 },
+        { name: 'Estimate breadth', impact: 10, weight: 0.2 },
+      ],
+      userId: activeUserId ?? existing?.userId,
+    };
+
+    if (jobIndex >= 0) {
+      activeJobs[jobIndex] = finalJob;
+    } else {
+      activeJobs.unshift(finalJob);
+    }
+
+    saveLocalJob(finalJob);
+    return finalJob;
   },
 };

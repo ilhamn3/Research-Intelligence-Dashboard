@@ -202,3 +202,25 @@ Return STRICT JSON only with keys:
     );
   }
 }
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    if (!id) {
+      return NextResponse.json({ error: 'id query parameter is required.' }, { status: 400 });
+    }
+
+    const report = await repository.getReport(id);
+    if (!report) {
+      return NextResponse.json({ error: `Report ${id} not found.` }, { status: 404 });
+    }
+
+    return NextResponse.json({ report });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to retrieve report.' },
+      { status: 500 }
+    );
+  }
+}

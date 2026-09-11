@@ -112,6 +112,7 @@ export default function ReportsPage() {
       if (!res.ok) throw new Error(data.error ?? 'Generation failed.');
 
       if (data.report) {
+        await repository.saveReport(data.report);
         setReports((prev) => [data.report, ...prev]);
         setGenSuccess(
           `Dossier generated successfully at ${new Date(data.report.generatedAt).toLocaleTimeString()}!`
