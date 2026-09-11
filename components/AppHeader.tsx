@@ -5,6 +5,8 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/useAuth';
+import { repository } from '@/lib/api';
+import { Trigger, ActivityItem } from '@/lib/types';
 
 export function AppHeader({ onToggleMobile }: { onToggleMobile?: () => void }) {
   const router = useRouter();
@@ -12,7 +14,49 @@ export function AppHeader({ onToggleMobile }: { onToggleMobile?: () => void }) {
   const { user, isAdmin, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [deskAlerts, setDeskAlerts] = useState<Array<{ id: string; title: string; detail: string; severity?: string }>>([]);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    async function loadNotifications() {
+      try {
+        const [triggers, activities] = await Promise.all([
+          repository.getTriggers(),
+          repository.getActivity(),
+        ]);
+        const alerts: Array<{ id: string; title: string; detail: string; severity?: string }> = [];
+
+        // Add top high/critical triggers
+        triggers
+          .filter((t) => t.severity === 'high' || t.severity === 'critical')
+          .slice(0, 3)
+          .forEach((t) => {
+            alerts.push({
+              id: t.id,
+              title: `${t.type} · ${t.companyId.toUpperCase()}`,
+              detail: t.summary,
+              severity: t.severity,
+            });
+          });
+
+        // Add latest activity if less than 3
+        if (alerts.length < 3 && activities.length > 0) {
+          activities.slice(0, 3 - alerts.length).forEach((a) => {
+            alerts.push({
+              id: a.id,
+              title: a.title,
+              detail: a.detail,
+              severity: 'medium',
+            });
+          });
+        }
+
+        setDeskAlerts(alerts);
+      } catch {}
+    }
+
+    loadNotifications();
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -100,17 +144,42 @@ export function AppHeader({ onToggleMobile }: { onToggleMobile?: () => void }) {
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <span style={{ fontSize: '12px', fontWeight: 600, color: '#fff' }}>Desk Notifications</span>
-                <span className="status-chip" style={{ fontSize: '10px', padding: '2px 6px' }}>2 Unread</span>
+                <span className="status-chip" style={{ fontSize: '10px', padding: '2px 6px' }}>
+                  {deskAlerts.length} Active Alerts
+                </span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: '12px' }}>
-                <div style={{ padding: '8px 10px', background: 'rgba(56,189,248,0.06)', borderRadius: 6, border: '1px solid rgba(56,189,248,0.15)' }}>
-                  <div style={{ color: '#38bdf8', fontWeight: 600 }}>Earnings Revision · NVDA</div>
-                  <div style={{ color: '#94a3b8', fontSize: '11px', marginTop: 2 }}>FY27 consensus EPS moved +8.4% after channel checks.</div>
-                </div>
-                <div style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: 6, border: '1px solid var(--line)' }}>
-                  <div style={{ color: '#e2e8f0', fontWeight: 600 }}>Consensus Dossier Certified · LLY</div>
-                  <div style={{ color: '#94a3b8', fontSize: '11px', marginTop: 2 }}>Incretin franchise dossier published (SKORE 91/100).</div>
-                </div>
+                {deskAlerts.length === 0 ? (
+                  <div style={{ color: '#64748b', fontSize: '11px', textAlign: 'center', padding: '12px 0' }}>
+                    No active desk alerts at this time.
+                  </div>
+                ) : (
+                  deskAlerts.map((alert) => (
+                    <div
+                      key={alert.id}
+                      style={{
+                        padding: '8px 10px',
+                        background: alert.severity === 'critical' ? 'rgba(244,63,94,0.06)' : 'rgba(56,189,248,0.06)',
+                        borderRadius: 6,
+                        border: alert.severity === 'critical' ? '1px solid rgba(244,63,94,0.2)' : '1px solid rgba(56,189,248,0.15)',
+                      }}
+                    >
+                      <div style={{ color: alert.severity === 'critical' ? '#fb7185' : '#38bdf8', fontWeight: 600 }}>
+                        {alert.title}
+                      </div>
+                      <div style={{ color: '#94a3b8', fontSize: '11px', marginTop: 2 }}>{alert.detail}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--line)', textAlign: 'right' }}>
+                <Link
+                  href="/activity"
+                  onClick={() => setNotificationOpen(false)}
+                  style={{ fontSize: '11px', color: '#38bdf8', textDecoration: 'none', fontWeight: 600 }}
+                >
+                  View Full Audit Ledger →
+                </Link>
               </div>
             </div>
           )}
